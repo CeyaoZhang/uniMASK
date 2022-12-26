@@ -116,8 +116,15 @@ def experiment(config):
 
     print(f"Starting run {name}")
     if config._args["finetune"]:
-        trainer = Trainer.load_from_name_and_seed(f"{config._args['finetune']}", **tp, best=True, finetune=True)
-        trainer.train(train_data, test_data) ## key!!
+        trainer = Trainer.load_from_name_and_seed(
+            f"{config._args['finetune']}",
+            **tp,
+            best=True,
+            finetune=True,
+            train_evaluator=config.train_evaluator,
+            final_evaluator=config.final_evaluator,
+        )
+        trainer.train(train_data, test_data)
     else:
         mp = base_model_params(
             nlayers=config._args["nlayers"],

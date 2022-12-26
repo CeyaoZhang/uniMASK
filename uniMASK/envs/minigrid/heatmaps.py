@@ -87,9 +87,37 @@ ROWS_IN_ORDER = [
 BC_TO_PARAMS_N = batch_code_to_params_n_dict({"seq_len": SEQ_LEN})
 
 
-DATA_NAME = f"2000_keyenv16x16_{SEQ_LEN}len"
+DATA_NAME = f"2000_keyenv_{SEQ_LEN}len"
 TEST_DATA_PATH = os.path.join(TEST_DATA_DIR, DATA_NAME)
 
+def get_run_name(row, num_trajs, finetune_col=None):
+    if row == "ft":
+        assert finetune_col is not None
+        row = "rnd"
+    state_loss = ROWS[row]["state_loss"]
+    sl_str = "" if state_loss == 1 else f"_sl{state_loss}"
+    train_task = row
+    if "NN" in train_task:
+        train_task = train_task[3:]
+    run_name = f"{num_trajs}N_10len_{train_task}_rl{sl_str}"
+    if finetune_col:
+        run_name += f"_finetune_{finetune_col}"
+    if "NN" in row:
+        run_name += "_NN"
+    if "DT" in row:
+        run_name += "_DT"
+    return run_name
+
+def load_trainer_if_found(row, num_trajs, seed, finetune_col=None):
+    trainer = None
+    run_name = get_run_name(row, num_trajs, finetune_col)
+    try:
+        trainer = Trainer.load(run_name, best=True, seed=seed)
+    except FileNotFoundError:
+        print(f"{run_name} with seed {seed} not found.")
+    if trainer is not None:
+        trainer.model.eval()
+    return trainer
 
 def generate_row(row, num_trajs, test_data, seeds, test):
     """
@@ -110,19 +138,19 @@ def generate_row(row, num_trajs, test_data, seeds, test):
         "rtg": 0,
         # "timestep": np.nan,
     }
-
     row_data_per_seed = []
-    for seed in tqdm(seeds, desc=" seed", position=2, leave=True):
+    missing_data = []
+    for seed in tqdm(seeds, desc=" seed", position=2, leave=False):
         row_data = np.empty(shape=(len(COLS)))
         row_data[:] = np.nan  # nan because the heatmap will render this as a blank.
         # "ft" needs a  different model being loaded for each column, but others don't.
-        if row == "ft":
-            run_name, trainer = None, None
-        else:
-            run_name = get_run_name(row, num_trajs)
-            trainer = Trainer.load(run_name, best=True, seed=seed)
-            trainer.model.eval()
-        for x, col in tqdm(enumerate(COLS), desc=" cols", position=3, leave=True, total=len(COLS)):
+        run_name, trainer = None, None
+        if row != "ft":
+            trainer = load_trainer_if_found(row, num_trajs, seed)
+            if trainer is None:
+                missing_data.append(f"{get_run_name(row, num_trajs)} seed={seed}")
+                continue
+        for x, col in tqdm(enumerate(COLS), desc=" cols", position=3, leave=False, total=len(COLS)):
             # DT can only be evaluated on some cols. On the others, we'll continue (leaving the value as np.nan).
             if "DT" in row:
                 if col in COLS_TO_DT_COLS:
@@ -131,9 +159,10 @@ def generate_row(row, num_trajs, test_data, seeds, test):
                 else:
                     continue
             if row == "ft":
-                run_name = get_run_name(row, num_trajs, finetune_col=col)
-                trainer = Trainer.load(run_name, best=True, seed=seed)
-                trainer.model.eval()
+                trainer = load_trainer_if_found(row, num_trajs, seed, col)
+                if trainer is None:
+                    missing_data.append(f"{get_run_name(row, num_trajs, col)} seed={seed}")
+                    continue
             # confirmed b.input_data.get_factor('state').input[0] same across different runs (for first two iters)
             b = Batch.get_dummy_batch_output(
                 test_data.get_rnd_batch(
@@ -148,6 +177,8 @@ def generate_row(row, num_trajs, test_data, seeds, test):
             )
             row_data[x] = b.compute_loss_and_acc(loss_weights)["total"].item()
         row_data_per_seed.append(row_data)
+    if missing_data:
+        raise FileNotFoundError(missing_data)
     row_data_per_seed = np.vstack(row_data_per_seed)
     assert row_data_per_seed.shape == (len(seeds), len(COLS))
     return (
@@ -199,7 +230,7 @@ def make_heatmap(data, output_name, output_format, float_format):
         cmap="viridis_r",
         cbar_kws={"pad": 0.02},
     )
-    s.set_xticklabels(x_labels, size=13)
+    s.set_xticklabels(x_labels, size=11)
     s.set_yticklabels(y_labels, size=10)
     s.axhline(ROWS_IN_ORDER.index("ft") + 1, color="1")
 
@@ -213,26 +244,7 @@ def make_heatmap(data, output_name, output_format, float_format):
         dpi=500,
         bbox_inches="tight",
     )
-    plt.show()
-
-
-def get_run_name(row, num_trajs, finetune_col=None):
-    if row == "ft":
-        assert finetune_col is not None
-        row = "rnd"
-    state_loss = ROWS[row]["state_loss"]
-    sl_str = "" if state_loss == 1 else f"_sl{state_loss}"
-    train_task = row
-    if "NN" in train_task:
-        train_task = train_task[3:]
-    run_name = f"{num_trajs}N_10len_{train_task}_rl{sl_str}"
-    if finetune_col:
-        run_name += f"_finetune_{finetune_col}"
-    if "NN" in row:
-        run_name += "_NN"
-    if "DT" in row:
-        run_name += "_DT"
-    return run_name
+    # plt.show()
 
 
 def generate_data(num_trajs, test_data, seeds, test=False):
@@ -247,9 +259,17 @@ def generate_data(num_trajs, test_data, seeds, test=False):
     mean_data = {}
     std_data = {}
     variation_data = {}
-    for y, row in tqdm(enumerate(ROWS), desc=" rows", position=1, leave=True, total=len(ROWS)):
-        mean_data[row], std_data[row], variation_data[row] = generate_row(row, num_trajs, test_data, seeds, test)
+    missing_data = []
+    for y, row in tqdm(enumerate(ROWS), desc=" rows", position=1, leave=False, total=len(ROWS)):
+        mean_data[row], std_data[row], variation_data[row] = None, None, None
+        try:
+            mean_data[row], std_data[row], variation_data[row] = generate_row(row, num_trajs, test_data, seeds, test)
+        except FileNotFoundError as e:
+            missing_data.append(e.args[0])
+            continue
         assert len(mean_data[row]) == len(COLS)
+    if missing_data:
+        raise FileNotFoundError(missing_data)
     assert len(mean_data) == len(ROWS)
     return mean_data, std_data, variation_data
 
@@ -257,11 +277,16 @@ def generate_data(num_trajs, test_data, seeds, test=False):
 def main(args):
     np.random.seed(1)
 
+    if args.no_benchmarks:
+        global ROWS_IN_ORDER, ROWS
+        ROWS_IN_ORDER = [row_name for row_name in ROWS_IN_ORDER if row_name not in BASELINE_ROWS.keys()]
+        ROWS = {k: v for k, v in ROWS.items() if k not in BASELINE_ROWS.keys()}
+
     dataset = Dataset.load(TEST_DATA_PATH)
     _, test_data = dataset.split_data(train_prop=0.5, num_val_trajs=1000)
 
     max_variations = {}
-    for num_trajs in tqdm(args.num_trajs, desc=" num trajs", position=0, leave=True):
+    for num_trajs in tqdm(args.num_trajs, desc=" num trajs", position=0, leave=False):
         if args.load:
             with open(f"heatmap_{num_trajs}_data.pkl", "rb") as handle:
                 mean_data, std_data, variation_data = pickle.load(handle)
@@ -314,6 +339,11 @@ if __name__ == "__main__":
         "--eps",
         action="store_true",
         help="Save as a high definition .eps",
+    )
+    parser.add_argument(
+        "--no_benchmarks",
+        action="store_true",
+        help="Omit benchmark rows (DT / NN).",
     )
     # parser.add_argument(
     #     "--err",
