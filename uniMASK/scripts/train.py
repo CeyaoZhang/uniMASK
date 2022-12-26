@@ -63,7 +63,7 @@ def experiment(config):
     loss_weights = config.loss_weights
     loss_types = config.loss_type
 
-    train_data, test_data = config.train_data, config.test_data
+    train_data, test_data = config.train_data, config.test_data ## I do want to know
 
     # Should be validated at the parser level!
     assert train_batch_code in Config.possible_batch_codes
@@ -117,7 +117,7 @@ def experiment(config):
     print(f"Starting run {name}")
     if config._args["finetune"]:
         trainer = Trainer.load_from_name_and_seed(f"{config._args['finetune']}", **tp, best=True, finetune=True)
-        trainer.train(train_data, test_data)
+        trainer.train(train_data, test_data) ## key!!
     else:
         mp = base_model_params(
             nlayers=config._args["nlayers"],

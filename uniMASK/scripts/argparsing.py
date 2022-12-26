@@ -6,7 +6,12 @@ def parse_common_args(parser, possible_batch_codes):
         default="rnd",
         choices=possible_batch_codes,
     )
-    parser.add_argument("--rew_batch_code", "-rbc", type=str, choices=possible_batch_codes)
+    parser.add_argument(
+        "--rew_batch_code", 
+        "-rbc", 
+        type=str, 
+        choices=possible_batch_codes
+    )
     parser.add_argument(
         "--val_batch_code",
         "-vbc",
@@ -14,12 +19,15 @@ def parse_common_args(parser, possible_batch_codes):
         default="all",
         choices=possible_batch_codes,
     )
+
     data_group = parser.add_mutually_exclusive_group(required=True)
     data_group.add_argument("--data_prop", "-data_p", type=float)
     data_group.add_argument("--num_trajs", type=int)
+    
     epochs_group = parser.add_mutually_exclusive_group(required=True)
     epochs_group.add_argument("--epochs", "-ep", type=int)
     epochs_group.add_argument("--timesteps", "-ts", type=int)
+
     parser.add_argument(
         "--finetune",
         type=str,

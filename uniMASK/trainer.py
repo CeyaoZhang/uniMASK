@@ -263,7 +263,7 @@ class Trainer:
 
         # Start from 1 because we already do an eval before this loop
         for epoch in range(1, self.epochs + 1):
-            global_t = self.training_itereration(train_trajs, global_t, epoch)
+            global_t = self.training_itereration(train_trajs, global_t, epoch) ## key!!
 
             # Reward evaluation
             if epoch % self.rew_eval_interval == 0:

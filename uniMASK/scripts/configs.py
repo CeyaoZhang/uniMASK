@@ -20,6 +20,7 @@ def parse(_input):
     # Make parser and subparsers
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title="environment", dest="environment", help="environment", required=True)
+    
     # To get optionals to appear after positionals, must iterate twice: first add_subparser(), then parse_common_args().
     subparsers_list = []
     for config_class in get_inheritors(Config):
@@ -27,7 +28,7 @@ def parse(_input):
         subparser.set_defaults(**config_class.default_args)
         subparsers_list.append(subparser)
     for subparser in subparsers_list:
-        parse_common_args(subparser, Config.possible_batch_codes)
+        parse_common_args(subparser, Config.possible_batch_codes) ## here parser.add_argument()
 
     args = parser.parse_args(args=_input)
     args = vars(args)

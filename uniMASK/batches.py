@@ -78,7 +78,7 @@ class Batch(ABC):
         """
         assert rtg_masking_type in Batch.RTG_MASKING_TYPES
 
-        num_seqs, seq_len = rtg_mask.shape
+        num_seqs, seq_len = rtg_mask.shape ## rtg_mask = (batch, length)
         if rtg_masking_type == "BC":
             rtg_mask[:, :] = 0
 
